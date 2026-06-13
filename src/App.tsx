@@ -43,6 +43,14 @@ import {
   MoveRight,
 } from "lucide-react";
 import parkingHero from "./assets/illustrations/smartpark-hero.svg";
+import {
+  authApi,
+  parkingApi,
+  bookingApi,
+  paymentApi,
+  setTokens,
+  clearTokens,
+} from "./services/api";
 
 const onboardingContent = [
   {
@@ -257,6 +265,10 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loginEmail, setLoginEmail] = useState("ceosmartpark@gmail.com");
   const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState("");
   const [signupData, setSignupData] = useState({
     name: "Bagas Aji Herlambang",
     email: "ceosmartpark@gmail.com",
@@ -280,6 +292,7 @@ export default function App() {
   const [parkingOptionsState, setParkingOptionsState] = useState<
     ParkingOption[]
   >(initialParkingOptions);
+  const [parkingLoading, setParkingLoading] = useState(false);
   const [upcomingBookingsState, setUpcomingBookings] =
     useState<BookingItem[]>(initialUpcoming);
   const [completedBookingsState, setCompletedBookings] =
@@ -291,6 +304,16 @@ export default function App() {
     null,
   );
   const [activeFloor, setActiveFloor] = useState("Floor 3");
+  const [floorsData, setFloorsData] = useState<
+    { id: string; floorName: string }[]
+  >([]);
+  const [slotsData, setSlotsData] = useState<
+    Record<string, { label: string; occupied: boolean; id: string }[]>
+  >({});
+  const [floorsLoading, setFloorsLoading] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingError, setBookingError] = useState("");
+  const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>("F3-53");
   const [bookingDuration, setBookingDuration] = useState<number>(3);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<
@@ -316,50 +339,15 @@ export default function App() {
   const minuteScrollTimeoutRef = useRef<number | null>(null);
 
   const floors = ["Floor 1", "Floor 2", "Floor 3", "Floor 4", "Floor 5"];
-  const floorSlots: Record<string, { label: string; occupied: boolean }[]> = {
-    "Floor 1": [
-      { label: "F1-12", occupied: true },
-      { label: "F1-13", occupied: false },
-      { label: "F1-53", occupied: false },
-      { label: "F1-54", occupied: false },
-      { label: "F1-96", occupied: false },
-      { label: "F1-98", occupied: false },
-    ],
-    "Floor 2": [
-      { label: "F2-12", occupied: false },
-      { label: "F2-13", occupied: true },
-      { label: "F2-53", occupied: false },
-      { label: "F2-54", occupied: false },
-      { label: "F2-96", occupied: false },
-      { label: "F2-98", occupied: true },
-    ],
-    "Floor 3": [
-      { label: "F3-12", occupied: true },
-      { label: "F3-13", occupied: false },
-      { label: "F3-100", occupied: false },
-      { label: "F3-98", occupied: false },
-      { label: "F3-53", occupied: false },
-      { label: "F3-54", occupied: false },
-      { label: "F3-96", occupied: true },
-    ],
-    "Floor 4": [
-      { label: "F4-12", occupied: false },
-      { label: "F4-13", occupied: false },
-      { label: "F4-53", occupied: true },
-      { label: "F4-54", occupied: false },
-      { label: "F4-96", occupied: false },
-      { label: "F4-98", occupied: false },
-    ],
-    "Floor 5": [
-      { label: "F5-12", occupied: false },
-      { label: "F5-13", occupied: false },
-      { label: "F5-53", occupied: false },
-      { label: "F5-54", occupied: true },
-      { label: "F5-96", occupied: false },
-      { label: "F5-98", occupied: false },
-    ],
-  };
-
+  const floorSlots =
+    Object.keys(slotsData).length > 0
+      ? slotsData
+      : {
+          "Floor 1": [
+            { id: "", label: "F1-12", occupied: true },
+            { id: "", label: "F1-13", occupied: false },
+          ],
+        };
   const activeFloorSlots = floorSlots[activeFloor] ?? [];
   const availableSlotCount = activeFloorSlots.filter(
     (slot) => !slot.occupied,
@@ -422,28 +410,43 @@ export default function App() {
     );
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     const email = loginEmail.trim().toLowerCase();
     const password = loginPassword;
 
-    if (email !== "ceosmartpark@gmail.com" || password !== "password") {
-      alert("Login failed: email atau password salah. Gunakan demo account.");
+    if (!email || !password) {
+      setLoginError("Email dan password wajib diisi");
       return;
     }
 
-    const authenticatedUser: User = {
-      name: "Bagas Aji Herlambang",
-      email: "ceosmartpark@gmail.com",
-      phone: "+62 (454) 726-0592",
-      birthdate: "18/03/2024",
-    };
+    setLoginLoading(true);
+    setLoginError("");
 
-    setUser(authenticatedUser);
-    localStorage.setItem("smartparkUser", JSON.stringify(authenticatedUser));
-    setScreen("home");
+    try {
+      const res = await authApi.login({ email, password });
+      const { accessToken, refreshToken, user } = res.data;
+
+      setTokens(accessToken, refreshToken);
+
+      const authenticatedUser: User = {
+        name: user.name,
+        email: user.email,
+        phone: user.phone || "",
+        birthdate: user.birthdate || "",
+      };
+
+      setUser(authenticatedUser);
+      localStorage.setItem("smartparkUser", JSON.stringify(authenticatedUser));
+      setScreen("home");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Login gagal";
+      setLoginError(message);
+    } finally {
+      setLoginLoading(false);
+    }
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     if (
       !signupData.name ||
       !signupData.email ||
@@ -451,52 +454,109 @@ export default function App() {
       !signupData.birthdate ||
       !signupData.password
     ) {
-      alert("Lengkapi semua bidang pendaftaran terlebih dahulu.");
+      setSignupError("Lengkapi semua bidang pendaftaran terlebih dahulu.");
       return;
     }
 
-    const registeredUser: User = {
-      name: signupData.name,
-      email: signupData.email,
-      phone: signupData.phone,
-      birthdate: signupData.birthdate,
-    };
+    setSignupLoading(true);
+    setSignupError("");
 
-    setUser(registeredUser);
-    localStorage.setItem("smartparkUser", JSON.stringify(registeredUser));
-    setScreen("home");
+    try {
+      const res = await authApi.register({
+        name: signupData.name,
+        email: signupData.email,
+        password: signupData.password,
+        phone: signupData.phone,
+      });
+
+      const { accessToken, refreshToken, user } = res.data;
+
+      setTokens(accessToken, refreshToken);
+
+      const registeredUser: User = {
+        name: user.name,
+        email: user.email,
+        phone: user.phone || signupData.phone,
+        birthdate: signupData.birthdate,
+      };
+
+      setUser(registeredUser);
+      localStorage.setItem("smartparkUser", JSON.stringify(registeredUser));
+      setScreen("home");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Registrasi gagal";
+      setSignupError(message);
+    } finally {
+      setSignupLoading(false);
+    }
   };
 
   const formatRupiah = (value: number) => {
     return new Intl.NumberFormat("id-ID").format(value);
   };
 
-  const handleBookingConfirm = () => {
-    if (!selectedParking || !selectedSlot) {
+  const handleBookingConfirm = async () => {
+    if (!selectedParking || !selectedSlot) return;
+
+    // Cari slot id dari slotsData
+    const floorSlotList = slotsData[activeFloor] ?? [];
+    const slotObj = floorSlotList.find((s) => s.label === selectedSlot);
+
+    if (!slotObj?.id) {
+      setBookingError("Slot tidak valid, silakan pilih ulang.");
       return;
     }
 
-    const amountValue = bookingDuration * 10000;
-    const amount = `Rp ${formatRupiah(amountValue)}`;
-    const code = `${selectedParking.title.slice(0, 3).toUpperCase()}-${selectedSlot.replace(/[^A-Z0-9]/gi, "")}-${Date.now()}`;
-    const newBooking: RecentBooking = {
-      title: selectedParking.title,
-      subtitle: selectedSlot,
-      time: `${bookingDuration} hr`,
-      amount,
-      code,
-    };
+    // Cari vehicle id
+    const vehicleObj = vehicles.find((v) => v.name === selectedCar);
+    if (!vehicleObj) {
+      setBookingError("Kendaraan tidak ditemukan.");
+      return;
+    }
 
-    setRecentBooking(newBooking);
-    setUpcomingBookings((prev) => [
-      {
-        title: newBooking.title,
-        subtitle: newBooking.subtitle,
-        time: newBooking.time,
-      },
-      ...prev,
-    ]);
-    setScreen("paymentSuccess");
+    setBookingLoading(true);
+    setBookingError("");
+
+    try {
+      const arrivalTime = new Date();
+      arrivalTime.setHours(arrivalHour, arrivalMinute, 0, 0);
+      const departureTime = new Date(arrivalTime);
+      departureTime.setHours(departureTime.getHours() + bookingDuration);
+
+      const res = await bookingApi.create({
+        vehicleId: (vehicleObj as any).id ?? "",
+        slotId: slotObj.id,
+        arrivalTime: arrivalTime.toISOString(),
+        departureTime: departureTime.toISOString(),
+        durationHours: bookingDuration,
+        paymentMethod: selectedPaymentMethod ?? "QRIS",
+      });
+
+      const booking = res.data;
+      setActiveBookingId(booking.id);
+
+      // Simulasi payment success
+      await paymentApi.success(booking.id);
+
+      const pricePerHour = (selectedParking as any).pricePerHour ?? 10000;
+      const amountValue = bookingDuration * pricePerHour;
+      const newBooking: RecentBooking = {
+        title: selectedParking.title,
+        subtitle: selectedSlot,
+        time: `${bookingDuration} hr`,
+        amount: `Rp ${formatRupiah(amountValue)}`,
+        code: booking.bookingCode,
+      };
+
+      setRecentBooking(newBooking);
+      setScreen("paymentSuccess");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Booking gagal";
+      setBookingError(message);
+    } finally {
+      setBookingLoading(false);
+    }
   };
 
   const handleViewBookingBarcode = (booking: BookingItem) => {
@@ -513,10 +573,17 @@ export default function App() {
     setScreen("paymentSuccess");
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem("smartparkUser");
-    setScreen("login");
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch (_) {
+      // tetap logout meski API gagal
+    } finally {
+      clearTokens();
+      setUser(null);
+      localStorage.removeItem("smartparkUser");
+      setScreen("login");
+    }
   };
 
   const handleOpenDirection = () => {
@@ -530,10 +597,110 @@ export default function App() {
 
   useEffect(() => {
     const stored = localStorage.getItem("smartparkUser");
-    if (stored) {
+    const token = localStorage.getItem("accessToken");
+    if (stored && token) {
       setUser(JSON.parse(stored));
+      setScreen("home");
     }
   }, []);
+
+  useEffect(() => {
+    if (screen === "home") {
+      fetchParkingLocations();
+    }
+  }, [screen]);
+
+  const fetchParkingLocations = async () => {
+    setParkingLoading(true);
+    try {
+      const res = await parkingApi.getAll();
+      const locations = res.data;
+
+      const mapped: ParkingOption[] = locations.map((loc: any) => ({
+        id: loc.id,
+        title: loc.name,
+        subtitle: loc.address,
+        rating: String(loc.rating),
+        price: `Rp${loc.pricePerHour.toLocaleString("id-ID")}/hr`,
+        slots: `${loc.availableSlots}/${loc.totalSlots} Slots`,
+        image: loc.image || dpmall,
+      }));
+
+      setParkingOptionsState(mapped);
+    } catch (error) {
+      // fallback ke data dummy jika API gagal
+      setParkingOptionsState(initialParkingOptions);
+    } finally {
+      setParkingLoading(false);
+    }
+  };
+
+  const fetchFloorsAndSlots = async (parkingId: string) => {
+    setFloorsLoading(true);
+    try {
+      const res = await parkingApi.getFloors(parkingId);
+      const floors = res.data;
+      setFloorsData(floors);
+
+      if (floors.length > 0) {
+        setActiveFloor(floors[0].floorName);
+
+        const slotMap: Record<
+          string,
+          { label: string; occupied: boolean; id: string }[]
+        > = {};
+
+        await Promise.all(
+          floors.map(async (floor: any) => {
+            const slotRes = await parkingApi.getSlots(floor.id);
+            slotMap[floor.floorName] = slotRes.data.map((slot: any) => ({
+              id: slot.id,
+              label: slot.slotCode,
+              occupied: slot.status !== "AVAILABLE",
+            }));
+          }),
+        );
+
+        setSlotsData(slotMap);
+      }
+    } catch (error) {
+      // fallback ke dummy jika gagal
+    } finally {
+      setFloorsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (screen === "bookings") {
+      fetchBookings();
+    }
+  }, [screen]);
+
+  const fetchBookings = async () => {
+    try {
+      const [upcomingRes, historyRes] = await Promise.all([
+        bookingApi.getUpcoming(),
+        bookingApi.getHistory(),
+      ]);
+
+      const upcoming: BookingItem[] = upcomingRes.data.map((b: any) => ({
+        title: b.slot?.floor?.parkingLocation?.name ?? "Parking",
+        subtitle: b.slot?.slotCode ?? "",
+        time: `${b.durationHours} hr`,
+      }));
+
+      const completed: BookingItem[] = historyRes.data.map((b: any) => ({
+        title: b.slot?.floor?.parkingLocation?.name ?? "Parking",
+        subtitle: b.slot?.slotCode ?? "",
+        time: `${b.durationHours} hr`,
+      }));
+
+      setUpcomingBookings(upcoming);
+      setCompletedBookings(completed);
+    } catch (error) {
+      // fallback ke data yang sudah ada
+    }
+  };
 
   useEffect(() => {
     const name = user?.name ?? signupData.name;
@@ -697,11 +864,23 @@ export default function App() {
                     Forgot Password ?
                   </button>
                 </div>
+                {loginError && (
+                  <p
+                    style={{
+                      color: "red",
+                      fontSize: "13px",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    {loginError}
+                  </p>
+                )}
                 <button
                   className="primary-button"
                   onClick={() => handleLogin()}
+                  disabled={loginLoading}
                 >
-                  Log In
+                  {loginLoading ? "Loading..." : "Log In"}
                 </button>
                 <div className="divider">Or</div>
                 <button
@@ -798,11 +977,23 @@ export default function App() {
                     }
                   />
                 </div>
+                {signupError && (
+                  <p
+                    style={{
+                      color: "red",
+                      fontSize: "13px",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    {signupError}
+                  </p>
+                )}
                 <button
                   className="primary-button"
                   onClick={() => handleSignup()}
+                  disabled={signupLoading}
                 >
-                  Register
+                  {signupLoading ? "Loading..." : "Register"}
                 </button>
                 <div className="divider">Or</div>
                 <button
@@ -822,17 +1013,15 @@ export default function App() {
           ) : screen === "editProfile" ? (
             <div className="screen screen-edit-profile">
               <div className="minimal-header">
+                <button
+                  className="back-button"
+                  onClick={() => setScreen("profile")}
+                >
+                  <ArrowLeft size={18} />
+                </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("profile")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Bio-data</h1>
-
-</div>
+                <h1>Bio-data</h1>
+              </div>
               <div className="profile-header-card">
                 <div className="avatar-circle profile-avatar">B</div>
                 <div>
@@ -1346,31 +1535,32 @@ export default function App() {
                       </div>
                     )}
 
-                    <div className="booking-actions">
-                      <button
-                        className="select-slot-button"
-                        onClick={() => setScreen("parkingSelection")}
-                      >
-                        Select Slot
-                      </button>
-                    </div>
+                    <button
+                      className="select-slot-button"
+                      onClick={() => {
+                        if (selectedParking) {
+                          fetchFloorsAndSlots(String(selectedParking.id));
+                        }
+                        setScreen("parkingSelection");
+                      }}
+                    >
+                      Select Slot
+                    </button>
                   </div>
                 )}
 
                 {screen === "parkingSelection" && selectedParking && (
                   <div className="screen screen-parking-selection">
-                  <div className="minimal-header">
+                    <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("parkingDetails")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("parkingDetails")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Select Parking Spot</h1>
-
-</div>
+                      <h1>Select Parking Spot</h1>
+                    </div>
 
                     <div className="floor-tabs">
                       <div className="floor-summary">
@@ -1516,18 +1706,16 @@ export default function App() {
 
                 {screen === "payment" && selectedParking && (
                   <div className="screen screen-payment">
-<div className="minimal-header">
+                    <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("parkingSelection")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("parkingSelection")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Booking Details</h1>
-
-</div>
+                      <h1>Booking Details</h1>
+                    </div>
 
                     <div className="booking-hero-card">
                       <div className="booking-hero-content">
@@ -1782,12 +1970,25 @@ export default function App() {
                       </div>
                     </div>
 
+                    {bookingError && (
+                      <p
+                        style={{
+                          color: "red",
+                          fontSize: "13px",
+                          marginBottom: "8px",
+                          textAlign: "center",
+                        }}
+                      >
+                        {bookingError}
+                      </p>
+                    )}
                     <div className="booking-actions">
                       <button
                         className="booking-button"
                         onClick={() => handleBookingConfirm()}
+                        disabled={bookingLoading}
                       >
-                        Pay & Reserve
+                        {bookingLoading ? "Processing..." : "Pay & Reserve"}
                       </button>
                     </div>
                   </div>
@@ -1923,17 +2124,15 @@ export default function App() {
                 {screen === "activeTicket" && recentBooking && (
                   <div className="screen screen-active-ticket">
                     <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("bookings")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("bookings")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Active Parking Pass</h1>
-
-</div>
+                      <h1>Active Parking Pass</h1>
+                    </div>
 
                     <div className="ticket-card">
                       <div className="ticket-top">
@@ -1995,35 +2194,29 @@ export default function App() {
                     <div className="screen-header profile-top-title">
                       <h1>Profile</h1>
                     </div>
-     <div className="profile-header-card">
+                    <div className="profile-header-card">
+                      <img
+                        src="/profile-parking.svg"
+                        alt="SmartPark Profile"
+                        className="profile-hero-svg"
+                      />
 
-  <img
-    src="/profile-parking.svg"
-    alt="SmartPark Profile"
-    className="profile-hero-svg"
-  />
+                      <strong>Bagas Aji Herlambang</strong>
 
-  <strong>
-    Bagas Aji Herlambang
-  </strong>
+                      <span>@ceosmartpark</span>
 
-  <span>
-    @ceosmartpark
-  </span>
+                      <div className="profile-member-badge">
+                        SmartPark Member
+                      </div>
 
-  <div className="profile-member-badge">
-    SmartPark Member
-  </div>
-
-<button
-  className="profile-edit-btn"
-  title="Edit Profile"
-  onClick={() => setScreen("editProfile")}
->
-  <Pencil size={16}/>
-</button>
-
-</div>
+                      <button
+                        className="profile-edit-btn"
+                        title="Edit Profile"
+                        onClick={() => setScreen("editProfile")}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </div>
                     <div className="profile-card">
                       {profileOptions.map((option) => (
                         <button
@@ -2086,17 +2279,15 @@ export default function App() {
                 {screen === "carSelection" && (
                   <div className="screen screen-car-selection">
                     <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("profile")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("profile")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Select Your Car</h1>
-
-</div>
+                      <h1>Select Your Car</h1>
+                    </div>
                     <div className="form-card">
                       <label>Tambah Mobil Baru</label>
                       <input
@@ -2164,17 +2355,15 @@ export default function App() {
                 {screen === "resetPassword" && (
                   <div className="screen screen-reset-password">
                     <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("profile")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("profile")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Reset Password</h1>
-
-</div>
+                      <h1>Reset Password</h1>
+                    </div>
                     <div className="form-card">
                       <label>Email</label>
                       <input
@@ -2205,18 +2394,16 @@ export default function App() {
                 )}
                 {screen === "language" && (
                   <div className="screen screen-language">
-                   <div className="minimal-header">
+                    <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("profile")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("profile")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Change Language</h1>
-
-</div>
+                      <h1>Change Language</h1>
+                    </div>
                     <div className="form-card">
                       {[
                         { code: "ID", label: "Bahasa Indonesia" },
@@ -2256,17 +2443,15 @@ export default function App() {
                 {screen === "help" && (
                   <div className="screen screen-help">
                     <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("profile")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("profile")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>Help & Support</h1>
-
-</div>
+                      <h1>Help & Support</h1>
+                    </div>
                     <div className="profile-card">
                       <div className="profile-item-left">
                         <span className="profile-item-icon">
@@ -2309,17 +2494,15 @@ export default function App() {
                 {screen === "about" && (
                   <div className="screen screen-about">
                     <div className="minimal-header">
+                      <button
+                        className="back-button"
+                        onClick={() => setScreen("profile")}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
 
-  <button
-    className="back-button"
-    onClick={() => setScreen("profile")}
-  >
-    <ArrowLeft size={18}/>
-  </button>
-
-  <h1>About App</h1>
-
-</div>
+                      <h1>About App</h1>
+                    </div>
                     <div className="profile-card">
                       <div className="profile-item-left">
                         <span className="profile-item-icon">
