@@ -48,6 +48,7 @@ import {
   parkingApi,
   bookingApi,
   paymentApi,
+  userApi,
   setTokens,
   clearTokens,
 } from "./services/api";
@@ -248,6 +249,18 @@ export default function App() {
     | "resetPassword"
     | "language"
   >("onboarding");
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+  } | null>(null);
+
+  const showToast = (
+    message: string,
+    type: "success" | "error" | "info" = "info",
+  ) => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
   const [language, setLanguage] = useState<"ID" | "EN">("ID");
   const [vehicles, setVehicles] = useState<Vehicle[]>([
     { name: "Toyota Avanza", plate: "B 1234 TKP" },
@@ -321,6 +334,11 @@ export default function App() {
   >("QRIS");
   const [arrivalHour, setArrivalHour] = useState(10);
   const [arrivalMinute, setArrivalMinute] = useState(0);
+  const [bookingSummary, setBookingSummary] = useState({
+    total: 0,
+    active: 0,
+    completed: 0,
+  });
 
   const maxArrivalHour = Math.max(10, 23 - bookingDuration);
   const hourOptions = Array.from(
@@ -424,7 +442,8 @@ export default function App() {
 
     try {
       const res = await authApi.login({ email, password });
-      const { accessToken, refreshToken, user } = res.data;
+      const { tokens, user } = res.data;
+      const { accessToken, refreshToken } = tokens;
 
       setTokens(accessToken, refreshToken);
 
@@ -441,6 +460,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login gagal";
       setLoginError(message);
+      showToast(message, "error");
     } finally {
       setLoginLoading(false);
     }
@@ -469,7 +489,8 @@ export default function App() {
         phone: signupData.phone,
       });
 
-      const { accessToken, refreshToken, user } = res.data;
+      const { tokens, user } = res.data;
+      const { accessToken, refreshToken } = tokens;
 
       setTokens(accessToken, refreshToken);
 
@@ -487,6 +508,7 @@ export default function App() {
       const message =
         error instanceof Error ? error.message : "Registrasi gagal";
       setSignupError(message);
+      showToast(message, "error");
     } finally {
       setSignupLoading(false);
     }
@@ -550,10 +572,13 @@ export default function App() {
       };
 
       setRecentBooking(newBooking);
+      showToast("Booking berhasil!", "success");
+      setScreen("paymentSuccess");
       setScreen("paymentSuccess");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Booking gagal";
       setBookingError(message);
+      showToast(message, "error");
     } finally {
       setBookingLoading(false);
     }
@@ -678,7 +703,8 @@ export default function App() {
 
   const fetchBookings = async () => {
     try {
-      const [upcomingRes, historyRes] = await Promise.all([
+      const [activeRes, upcomingRes, historyRes] = await Promise.all([
+        bookingApi.getActive(),
         bookingApi.getUpcoming(),
         bookingApi.getHistory(),
       ]);
@@ -697,7 +723,51 @@ export default function App() {
 
       setUpcomingBookings(upcoming);
       setCompletedBookings(completed);
+
+      setBookingSummary({
+        total: upcoming.length + completed.length,
+        active: activeRes.data ? 1 : 0,
+        completed: completed.length,
+      });
+
+      // Set active booking jika ada
+      if (activeRes.data) {
+        const b = activeRes.data;
+        setActiveBookingId(b.id);
+        setRecentBooking({
+          title: b.slot?.floor?.parkingLocation?.name ?? "",
+          subtitle: b.slot?.slotCode ?? "",
+          time: `${b.durationHours} hr`,
+          amount: `Rp ${formatRupiah(b.totalAmount)}`,
+          code: b.bookingCode,
+        });
+      }
     } catch (error) {
+      // fallback
+    }
+  };
+
+  useEffect(() => {
+    if (screen === "activeTicket" && activeBookingId) {
+      fetchActiveTicket();
+    }
+  }, [screen]);
+
+  const fetchActiveTicket = async () => {
+    if (!activeBookingId) return;
+    try {
+      const res = await bookingApi.getDetail(activeBookingId);
+      const b = res.data;
+
+      setRecentBooking({
+        title:
+          b.slot?.floor?.parkingLocation?.name ?? recentBooking?.title ?? "",
+        subtitle: b.slot?.slotCode ?? "",
+        time: `${b.durationHours} hr`,
+        amount: `Rp ${formatRupiah(b.totalAmount)}`,
+        code: b.bookingCode,
+      });
+    } catch (_) {
       // fallback ke data yang sudah ada
     }
   };
@@ -718,36 +788,51 @@ export default function App() {
     });
   }, [user, selectedCar, signupData, vehicles]);
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     const fullName = `${profileEdit.firstName} ${profileEdit.lastName}`.trim();
-    const updatedUser: User = {
-      name: fullName || user?.name || signupData.name,
-      email: user?.email ?? signupData.email,
-      phone: profileEdit.phone,
-      birthdate: profileEdit.birthdate,
-    };
 
-    setUser(updatedUser);
-    localStorage.setItem("smartparkUser", JSON.stringify(updatedUser));
-    if (!vehicles.some((vehicle) => vehicle.name === profileEdit.car)) {
-      setVehicles((prev) => [
-        ...prev,
-        { name: profileEdit.car, plate: profileEdit.carPlate || "N/A" },
-      ]);
+    try {
+      await userApi.updateProfile({
+        name: fullName || user?.name || "",
+        phone: profileEdit.phone,
+        birthdate: profileEdit.birthdate,
+      });
+
+      const updatedUser: User = {
+        name: fullName || user?.name || signupData.name,
+        email: user?.email ?? signupData.email,
+        phone: profileEdit.phone,
+        birthdate: profileEdit.birthdate,
+      };
+
+      setUser(updatedUser);
+      localStorage.setItem("smartparkUser", JSON.stringify(updatedUser));
+
+      if (!vehicles.some((v) => v.name === profileEdit.car)) {
+        setVehicles((prev) => [
+          ...prev,
+          { name: profileEdit.car, plate: profileEdit.carPlate || "N/A" },
+        ]);
+      }
+
+      setSelectedCar(profileEdit.car);
+      setScreen("profile");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Update profile gagal";
+      showToast(message, "error");
     }
-    setSelectedCar(profileEdit.car);
-    setScreen("profile");
   };
 
   const handleAddCar = () => {
     const trimmed = newCarName.trim();
     const plate = newCarPlate.trim().toUpperCase();
     if (!trimmed || !plate) {
-      alert("Masukkan nama mobil dan plat nomor terlebih dahulu.");
+      showToast("Masukkan nama mobil dan plat nomor terlebih dahulu.", "error");
       return;
     }
     if (vehicles.some((vehicle) => vehicle.name === trimmed)) {
-      alert("Mobil sudah ada dalam daftar.");
+      showToast("Mobil sudah ada dalam daftar.", "error");
       return;
     }
     setVehicles((prev) => [...prev, { name: trimmed, plate }]);
@@ -770,7 +855,7 @@ export default function App() {
   };
 
   const handleGoogleLogin = () => {
-    alert("Google login clicked — implement OAuth flow.");
+    showToast("Google login belum tersedia.", "info");
   };
 
   const handleProfileOption = (action: ProfileOptionAction) => {
@@ -794,7 +879,7 @@ export default function App() {
   };
 
   const handleFacebookLogin = () => {
-    alert("Facebook login clicked — implement OAuth flow.");
+    showToast("Facebook login belum tersedia.", "info");
   };
 
   return (
@@ -812,7 +897,13 @@ export default function App() {
         )}
 
         <div
-          className={`screen-container ${screen === "onboarding" ? "no-padding" : ""}`}
+          className={`screen-container ${
+            screen === "onboarding"
+              ? "no-padding"
+              : screen === "login" || screen === "signup"
+                ? "no-padding auth-container"
+                : ""
+          }`}
         >
           {screen === "login" ? (
             <div className="auth-screen">
@@ -1238,54 +1329,136 @@ export default function App() {
                       <button>See All</button>
                     </div>
                     <div className="parking-list">
-                      {filteredParking.map((parking, index) => (
-                        <button
-                          key={`${parking.title}-${index}`}
-                          className="parking-card"
-                          onClick={() => {
-                            setSelectedParking(parking);
-                            setSelectedSlot(null);
-                            setScreen("parkingDetails");
+                      {parkingLoading ? (
+                        // Skeleton Loading
+                        [1, 2, 3].map((i) => (
+                          <div
+                            key={i}
+                            className="parking-card"
+                            style={{ pointerEvents: "none" }}
+                          >
+                            <div
+                              className="parking-image-wrapper"
+                              style={{
+                                background: "#e5e7eb",
+                                borderRadius: "12px",
+                                width: "80px",
+                                height: "80px",
+                                flexShrink: 0,
+                                animation:
+                                  "skeleton-pulse 1.5s ease-in-out infinite",
+                              }}
+                            />
+                            <div
+                              className="parking-details"
+                              style={{
+                                flex: 1,
+                                gap: "8px",
+                                display: "flex",
+                                flexDirection: "column",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  height: "16px",
+                                  background: "#e5e7eb",
+                                  borderRadius: "6px",
+                                  width: "70%",
+                                  animation:
+                                    "skeleton-pulse 1.5s ease-in-out infinite",
+                                }}
+                              />
+                              <div
+                                style={{
+                                  height: "12px",
+                                  background: "#e5e7eb",
+                                  borderRadius: "6px",
+                                  width: "90%",
+                                  animation:
+                                    "skeleton-pulse 1.5s ease-in-out infinite",
+                                }}
+                              />
+                              <div
+                                style={{
+                                  height: "12px",
+                                  background: "#e5e7eb",
+                                  borderRadius: "6px",
+                                  width: "50%",
+                                  animation:
+                                    "skeleton-pulse 1.5s ease-in-out infinite",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))
+                      ) : filteredParking.length === 0 ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            padding: "48px 24px",
+                            gap: "12px",
+                            color: "#9ca3af",
                           }}
                         >
-                          <div className="parking-image-wrapper">
-                            <img
-                              src={parking.image}
-                              alt={parking.title}
-                              className="parking-thumb"
-                            />
-
-                            <div className="parking-rating">
-                              <Star size={12} fill="currentColor" />
-                              <span>{parking.rating}</span>
+                          <MapPin size={48} strokeWidth={1} color="#d1d5db" />
+                          <p
+                            style={{
+                              margin: 0,
+                              fontWeight: 600,
+                              color: "#6b7280",
+                            }}
+                          >
+                            Parkir tidak ditemukan
+                          </p>
+                          <p style={{ margin: 0, fontSize: "13px" }}>
+                            Coba kata kunci lain
+                          </p>
+                        </div>
+                      ) : (
+                        filteredParking.map((parking, index) => (
+                          <button
+                            key={`${parking.title}-${index}`}
+                            className="parking-card"
+                            onClick={() => {
+                              setSelectedParking(parking);
+                              setSelectedSlot(null);
+                              setScreen("parkingDetails");
+                            }}
+                          >
+                            <div className="parking-image-wrapper">
+                              <img
+                                src={parking.image}
+                                alt={parking.title}
+                                className="parking-thumb"
+                              />
+                              <div className="parking-rating">
+                                <Star size={12} fill="currentColor" />
+                                <span>{parking.rating}</span>
+                              </div>
                             </div>
-                          </div>
-
-                          <div className="parking-details">
-                            <div className="parking-title-row">
-                              <strong>{parking.title}</strong>
-                            </div>
-
-                            <span className="parking-address">
-                              {parking.subtitle}
-                            </span>
-
-                            <div className="parking-meta">
-                              <span>{parking.price}</span>
-
-                              <span className="meta-dot"></span>
-
-                              <span className="parking-slots">
-                                {parking.slots}
+                            <div className="parking-details">
+                              <div className="parking-title-row">
+                                <strong>{parking.title}</strong>
+                              </div>
+                              <span className="parking-address">
+                                {parking.subtitle}
                               </span>
+                              <div className="parking-meta">
+                                <span>{parking.price}</span>
+                                <span className="meta-dot"></span>
+                                <span className="parking-slots">
+                                  {parking.slots}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-
-                          <span className="arrow">
-                            <ChevronRight size={18} />
-                          </span>
-                        </button>
-                      ))}
+                            <span className="arrow">
+                              <ChevronRight size={18} />
+                            </span>
+                          </button>
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
@@ -1343,21 +1516,17 @@ export default function App() {
 
                     <div className="booking-summary-card">
                       <div className="summary-item">
-                        <strong>12</strong>
+                        <strong>{bookingSummary.total}</strong>
                         <span>Total</span>
                       </div>
-
                       <div className="summary-divider" />
-
                       <div className="summary-item">
-                        <strong>3</strong>
+                        <strong>{bookingSummary.active}</strong>
                         <span>Active</span>
                       </div>
-
                       <div className="summary-divider" />
-
                       <div className="summary-item">
-                        <strong>9</strong>
+                        <strong>{bookingSummary.completed}</strong>
                         <span>Completed</span>
                       </div>
                     </div>
@@ -1379,33 +1548,74 @@ export default function App() {
                       {(bookingTab === "upcoming"
                         ? upcomingBookingsState
                         : completedBookingsState
-                      ).map((item, index) => (
-                        <button
-                          key={`${item.title}-${index}`}
-                          className={`booking-card booking-card--match ${bookingTab === "upcoming" ? "booking-card--clickable" : ""}`}
-                          onClick={
-                            bookingTab === "upcoming"
-                              ? () => handleViewBookingBarcode(item)
-                              : undefined
-                          }
+                      ).length === 0 ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "48px 24px",
+                            gap: "12px",
+                            color: "#9ca3af",
+                          }}
                         >
-                          <div>
-                            <strong>{item.title}</strong>
-                            <span>{item.subtitle}</span>
-                          </div>
-                          <div className="booking-right">
-                            <span
-                              className={
-                                bookingTab === "completed"
-                                  ? "booking-done"
-                                  : "booking-time"
-                              }
-                            >
-                              {item.time}
-                            </span>
-                          </div>
-                        </button>
-                      ))}
+                          <Ticket size={48} strokeWidth={1} color="#d1d5db" />
+                          <p
+                            style={{
+                              margin: 0,
+                              fontWeight: 600,
+                              color: "#6b7280",
+                            }}
+                          >
+                            {bookingTab === "upcoming"
+                              ? "Tidak ada booking mendatang"
+                              : "Belum ada riwayat booking"}
+                          </p>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: "13px",
+                              textAlign: "center",
+                            }}
+                          >
+                            {bookingTab === "upcoming"
+                              ? "Buat booking baru untuk mulai parkir"
+                              : "Riwayat booking kamu akan muncul di sini"}
+                          </p>
+                        </div>
+                      ) : (
+                        (bookingTab === "upcoming"
+                          ? upcomingBookingsState
+                          : completedBookingsState
+                        ).map((item, index) => (
+                          <button
+                            key={`${item.title}-${index}`}
+                            className={`booking-card booking-card--match ${bookingTab === "upcoming" ? "booking-card--clickable" : ""}`}
+                            onClick={
+                              bookingTab === "upcoming"
+                                ? () => handleViewBookingBarcode(item)
+                                : undefined
+                            }
+                          >
+                            <div>
+                              <strong>{item.title}</strong>
+                              <span>{item.subtitle}</span>
+                            </div>
+                            <div className="booking-right">
+                              <span
+                                className={
+                                  bookingTab === "completed"
+                                    ? "booking-done"
+                                    : "booking-time"
+                                }
+                              >
+                                {item.time}
+                              </span>
+                            </div>
+                          </button>
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
@@ -1589,7 +1799,7 @@ export default function App() {
                       <div className="parking-map-side parking-left">
                         <div className="pillar-pill">Pillar No. 12</div>
                         <div className="slot-column">
-                          {floorSlots[activeFloor]
+                          {(floorSlots[activeFloor] ?? [])
                             .filter((_, index) => index % 2 === 0)
                             .map((slot) => (
                               <button
@@ -1633,7 +1843,7 @@ export default function App() {
                       <div className="parking-map-side parking-right">
                         <div className="pillar-pill">Pillar No. 13</div>
                         <div className="slot-column">
-                          {floorSlots[activeFloor]
+                          {(floorSlots[activeFloor] ?? [])
                             .filter((_, index) => index % 2 === 1)
                             .map((slot) => (
                               <button
@@ -2381,8 +2591,9 @@ export default function App() {
                       <button
                         className="primary-button"
                         onClick={() => {
-                          alert(
+                          showToast(
                             "Password berhasil di-reset. Silakan login kembali.",
+                            "success",
                           );
                           setScreen("login");
                         }}
@@ -2576,6 +2787,35 @@ export default function App() {
               </span>
               <span>Profile</span>
             </button>
+          </div>
+        )}
+        {/* Toast Notification */}
+        {toast && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: "80px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              background:
+                toast.type === "success"
+                  ? "#16a34a"
+                  : toast.type === "error"
+                    ? "#dc2626"
+                    : "#1d4ed8",
+              color: "white",
+              padding: "12px 20px",
+              borderRadius: "12px",
+              fontSize: "13px",
+              fontWeight: 500,
+              zIndex: 9999,
+              maxWidth: "320px",
+              textAlign: "center",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+              animation: "fadeInUp 0.3s ease",
+            }}
+          >
+            {toast.message}
           </div>
         )}
       </div>

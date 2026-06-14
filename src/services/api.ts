@@ -37,10 +37,16 @@ async function request<T = unknown>(
 
   const data: T = await response.json() as T;
 
-  if (!response.ok) {
-    const errData = data as { message?: string };
-    throw new Error(errData.message || 'Terjadi kesalahan');
+if (!response.ok) {
+  const errData = data as { message?: string; errors?: { field: string; message: string }[] };
+  
+  if (errData.errors && errData.errors.length > 0) {
+    const errorMessages = errData.errors.map(e => e.message).join(", ");
+    throw new Error(errorMessages);
   }
+  
+  throw new Error(errData.message || 'Terjadi kesalahan');
+}
 
   return data;
 }
