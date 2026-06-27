@@ -1237,6 +1237,7 @@ button {
 
 .booking-right {
   display: grid;
+  gap: 8px;
   text-align: right;
 }
 
@@ -1248,6 +1249,81 @@ button {
 .booking-done {
   color: #16a34a;
   font-weight: 700;
+}
+
+.cancel-booking-button {
+  padding: 7px 10px;
+  border: 1px solid #dc2626;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.cancel-booking-button:hover {
+  background: #fef2f2;
+}
+
+.confirmation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.confirmation-dialog {
+  width: min(100%, 360px);
+  padding: 22px;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.confirmation-dialog h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 22px;
+}
+
+.confirmation-dialog p {
+  margin: 10px 0 0;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.confirmation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.confirmation-keep-button,
+.confirmation-cancel-button {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-weight: 800;
+}
+
+.confirmation-keep-button {
+  background: #f8f8f4;
+  color: #143b33;
+}
+
+.confirmation-cancel-button {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.confirmation-keep-button:disabled,
+.confirmation-cancel-button:disabled {
+  opacity: 0.7;
 }
 
 .profile-header-card {
@@ -2694,6 +2770,84 @@ button {
   transform: translateY(-2px);
 }
 
+.booking-mode-selector {
+  display: grid;
+  gap: 10px;
+}
+
+.booking-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8f9f3;
+  font-weight: 700;
+}
+
+.booking-mode-option.active {
+  background: #d7b300;
+  border-color: #d7b300;
+  color: #111827;
+}
+
+.booking-mode-radio {
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.booking-mode-option.active .booking-mode-radio::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.open-parking-info-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: #f8f8f4;
+  color: #111827;
+}
+
+.open-parking-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  background: #d7b300;
+  color: #111827;
+  flex: 0 0 auto;
+}
+
+.open-parking-info-card strong {
+  display: block;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.open-parking-info-card p {
+  margin: 6px 0 0;
+  color: #4b5563;
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
 .select-slot-button {
   width: 100%;
 
@@ -3434,6 +3588,12 @@ svg {
   color: #143b33;
 }
 
+.price-value--text {
+  display: block;
+
+  font-size: 22px;
+}
+
 .slot-legend {
   display: flex;
 
@@ -3698,6 +3858,14 @@ svg {
   font-weight: 800;
 
   margin-top: 8px;
+}
+
+.payment-total-price--text {
+  max-width: 230px;
+
+  font-size: 24px;
+
+  line-height: 1.2;
 }
 
 .payment-total-note {

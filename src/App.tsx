@@ -49,6 +49,7 @@ import {
   bookingApi,
   paymentApi,
   userApi,
+  vehicleApi,
   setTokens,
   clearTokens,
 } from "./services/api";
@@ -121,16 +122,25 @@ type ParkingOption = {
   slots: string;
   image?: string;
 };
-type BookingItem = { title: string; subtitle: string; time: string };
+type BookingMode = "FIXED" | "OPEN";
+type BookingItem = {
+  id?: string;
+  title: string;
+  subtitle: string;
+  time: string;
+  status?: string;
+  bookingMode?: BookingMode;
+};
 type RecentBooking = {
   title: string;
   subtitle: string;
   time: string;
   amount: string;
   code: string;
+  bookingMode?: BookingMode;
 };
 type User = { name: string; email: string; phone: string; birthdate: string };
-type Vehicle = { name: string; plate: string };
+type Vehicle = { id: string; name: string; plate: string; plateNumber: string };
 
 const initialParkingOptions: ParkingOption[] = [
   {
@@ -262,12 +272,8 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
   const [language, setLanguage] = useState<"ID" | "EN">("ID");
-  const [vehicles, setVehicles] = useState<Vehicle[]>([
-    { name: "Toyota Avanza", plate: "B 1234 TKP" },
-    { name: "Honda BR-V", plate: "B 5678 XYZ" },
-    { name: "Suzuki Ertiga", plate: "B 9012 MNO" },
-  ]);
-  const [selectedCar, setSelectedCar] = useState("Toyota Avanza");
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedCar, setSelectedCar] = useState<string>("");
   const [newCarName, setNewCarName] = useState("");
   const [newCarPlate, setNewCarPlate] = useState("");
   const [onboardingIndex, setOnboardingIndex] = useState(0);
@@ -327,8 +333,11 @@ export default function App() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>("F3-53");
+  const [cancelTarget, setCancelTarget] = useState<BookingItem | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [bookingDuration, setBookingDuration] = useState<number>(3);
+  const [parkingMode, setParkingMode] = useState<BookingMode>("FIXED");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<
     "QRIS" | "DANA"
   >("QRIS");
@@ -356,7 +365,12 @@ export default function App() {
   const hourScrollTimeoutRef = useRef<number | null>(null);
   const minuteScrollTimeoutRef = useRef<number | null>(null);
 
-  const floors = ["Floor 1", "Floor 2", "Floor 3", "Floor 4", "Floor 5"];
+  // Use floorsData if available, else fallback
+  const floors =
+    floorsData.length > 0
+      ? floorsData.map((f) => f.floorName)
+      : ["Floor 1", "Floor 2", "Floor 3", "Floor 4", "Floor 5"];
+
   const floorSlots =
     Object.keys(slotsData).length > 0
       ? slotsData
@@ -378,6 +392,8 @@ export default function App() {
   const formatTime = (hour: number, minute: number) => {
     return `${hour.toString().padStart(2, "0")}.${minute.toString().padStart(2, "0")}`;
   };
+  const isOpenParking = parkingMode === "OPEN";
+  const recentBookingIsOpen = recentBooking?.bookingMode === "OPEN";
 
   // keep wheels scrolled so selected item sits on the center line
   useEffect(() => {
@@ -408,6 +424,17 @@ export default function App() {
       });
     }
   }, [arrivalMinute, minuteOptions]);
+
+  // When active floor changes, select first available slot on that floor
+  useEffect(() => {
+    const currentFloorSlots = floorSlots[activeFloor] ?? [];
+    const firstAvailable = currentFloorSlots.find((slot) => !slot.occupied);
+    if (firstAvailable && selectedSlot !== firstAvailable.label) {
+      setSelectedSlot(firstAvailable.label);
+    } else if (!firstAvailable) {
+      setSelectedSlot(null);
+    }
+  }, [activeFloor, floorSlots]);
 
   const durationOptions = [1, 2, 3, 4];
 
@@ -521,9 +548,16 @@ export default function App() {
   const handleBookingConfirm = async () => {
     if (!selectedParking || !selectedSlot) return;
 
+    console.log("Debug - selectedParking:", selectedParking);
+    console.log("Debug - selectedSlot:", selectedSlot);
+    console.log("Debug - activeFloor:", activeFloor);
+    console.log("Debug - slotsData:", slotsData);
+
     // Cari slot id dari slotsData
     const floorSlotList = slotsData[activeFloor] ?? [];
+    console.log("Debug - floorSlotList:", floorSlotList);
     const slotObj = floorSlotList.find((s) => s.label === selectedSlot);
+    console.log("Debug - slotObj:", slotObj);
 
     if (!slotObj?.id) {
       setBookingError("Slot tidak valid, silakan pilih ulang.");
@@ -532,7 +566,7 @@ export default function App() {
 
     // Cari vehicle id
     const vehicleObj = vehicles.find((v) => v.name === selectedCar);
-    if (!vehicleObj) {
+    if (!vehicleObj?.id) {
       setBookingError("Kendaraan tidak ditemukan.");
       return;
     }
@@ -547,7 +581,7 @@ export default function App() {
       departureTime.setHours(departureTime.getHours() + bookingDuration);
 
       const res = await bookingApi.create({
-        vehicleId: (vehicleObj as any).id ?? "",
+        vehicleId: vehicleObj.id,
         slotId: slotObj.id,
         arrivalTime: arrivalTime.toISOString(),
         departureTime: departureTime.toISOString(),
@@ -566,14 +600,16 @@ export default function App() {
       const newBooking: RecentBooking = {
         title: selectedParking.title,
         subtitle: selectedSlot,
-        time: `${bookingDuration} hr`,
-        amount: `Rp ${formatRupiah(amountValue)}`,
+        time: isOpenParking ? "Open Parking" : `${bookingDuration} hr`,
+        amount: isOpenParking
+          ? "Calculated when leaving"
+          : `Rp ${formatRupiah(amountValue)}`,
         code: booking.bookingCode,
+        bookingMode: parkingMode,
       };
 
       setRecentBooking(newBooking);
       showToast("Booking berhasil!", "success");
-      setScreen("paymentSuccess");
       setScreen("paymentSuccess");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Booking gagal";
@@ -590,12 +626,47 @@ export default function App() {
       title: booking.title,
       subtitle: booking.subtitle,
       time: booking.time,
-      amount: "Rp 30.000",
+      amount:
+        booking.bookingMode === "OPEN" ? "Calculated when leaving" : "Rp 30.000",
       code,
+      bookingMode: booking.bookingMode,
     };
 
     setRecentBooking(bookingDetails);
     setScreen("paymentSuccess");
+  };
+
+  const handleCancelBooking = async () => {
+    if (!cancelTarget?.id) return;
+
+    setCancelLoading(true);
+
+    try {
+      await bookingApi.cancel(cancelTarget.id);
+
+      if (activeBookingId === cancelTarget.id) {
+        setActiveBookingId(null);
+        setRecentBooking(null);
+        if (screen === "activeTicket") {
+          setScreen("bookings");
+        }
+      }
+
+      await fetchBookings();
+
+      if (selectedParking) {
+        await fetchFloorsAndSlots(String(selectedParking.id));
+      }
+
+      setCancelTarget(null);
+      showToast("Booking cancelled successfully", "success");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to cancel booking";
+      showToast(message, "error");
+    } finally {
+      setCancelLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -630,6 +701,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (user) {
+      fetchVehicles();
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (screen === "home") {
       fetchParkingLocations();
     }
@@ -641,6 +718,14 @@ export default function App() {
       const res = await parkingApi.getAll();
       const locations = res.data;
 
+      const getMallImage = (name: string) => {
+        if (name.toLowerCase().includes("dp mall")) return dpmall;
+        if (name.toLowerCase().includes("paragon")) return paragon;
+        if (name.toLowerCase().includes("queen city")) return queencity;
+        if (name.toLowerCase().includes("the park")) return thepark;
+        return dpmall;
+      };
+
       const mapped: ParkingOption[] = locations.map((loc: any) => ({
         id: loc.id,
         title: loc.name,
@@ -648,7 +733,7 @@ export default function App() {
         rating: String(loc.rating),
         price: `Rp${loc.pricePerHour.toLocaleString("id-ID")}/hr`,
         slots: `${loc.availableSlots}/${loc.totalSlots} Slots`,
-        image: loc.image || dpmall,
+        image: loc.image || getMallImage(loc.name),
       }));
 
       setParkingOptionsState(mapped);
@@ -662,13 +747,17 @@ export default function App() {
 
   const fetchFloorsAndSlots = async (parkingId: string) => {
     setFloorsLoading(true);
+    setSelectedSlot(null); // Reset selected slot when changing parking location
     try {
+      console.log("Fetching floors for parkingId:", parkingId);
       const res = await parkingApi.getFloors(parkingId);
       const floors = res.data;
+      console.log("Fetched floors:", floors);
       setFloorsData(floors);
 
       if (floors.length > 0) {
-        setActiveFloor(floors[0].floorName);
+        const firstFloorName = floors[0].floorName;
+        setActiveFloor(firstFloorName);
 
         const slotMap: Record<
           string,
@@ -677,8 +766,11 @@ export default function App() {
 
         await Promise.all(
           floors.map(async (floor: any) => {
+            console.log("Fetching slots for floor:", floor.id, floor.floorName);
             const slotRes = await parkingApi.getSlots(floor.id);
-            slotMap[floor.floorName] = slotRes.data.map((slot: any) => ({
+            console.log("Slots for floor", floor.floorName, ":", slotRes.data);
+            const slotsArray = slotRes.data.slots || [];
+            slotMap[floor.floorName] = slotsArray.map((slot: any) => ({
               id: slot.id,
               label: slot.slotCode,
               occupied: slot.status !== "AVAILABLE",
@@ -686,9 +778,22 @@ export default function App() {
           }),
         );
 
+        console.log("Final slotMap:", slotMap);
         setSlotsData(slotMap);
+
+        // Auto-select first available slot on the first floor
+        const firstFloorSlots = slotMap[firstFloorName] ?? [];
+        const firstAvailableSlot = firstFloorSlots.find(
+          (slot) => !slot.occupied,
+        );
+        console.log("First available slot:", firstAvailableSlot);
+        if (firstAvailableSlot) {
+          setSelectedSlot(firstAvailableSlot.label);
+          console.log("Set selectedSlot to:", firstAvailableSlot.label);
+        }
       }
     } catch (error) {
+      console.error("Error fetching floors/slots:", error);
       // fallback ke dummy jika gagal
     } finally {
       setFloorsLoading(false);
@@ -710,15 +815,33 @@ export default function App() {
       ]);
 
       const upcoming: BookingItem[] = upcomingRes.data.map((b: any) => ({
+        id: b.id,
         title: b.slot?.floor?.parkingLocation?.name ?? "Parking",
         subtitle: b.slot?.slotCode ?? "",
-        time: `${b.durationHours} hr`,
+        time:
+          parkingMode === "OPEN" && b.id === activeBookingId
+            ? "Open Parking"
+            : `${b.durationHours} hr`,
+        bookingMode:
+          parkingMode === "OPEN" && b.id === activeBookingId
+            ? "OPEN"
+            : "FIXED",
+        status: b.status,
       }));
 
       const completed: BookingItem[] = historyRes.data.map((b: any) => ({
+        id: b.id,
         title: b.slot?.floor?.parkingLocation?.name ?? "Parking",
         subtitle: b.slot?.slotCode ?? "",
-        time: `${b.durationHours} hr`,
+        time:
+          parkingMode === "OPEN" && b.id === activeBookingId
+            ? "Open Parking"
+            : `${b.durationHours} hr`,
+        bookingMode:
+          parkingMode === "OPEN" && b.id === activeBookingId
+            ? "OPEN"
+            : "FIXED",
+        status: b.status,
       }));
 
       setUpcomingBookings(upcoming);
@@ -737,9 +860,19 @@ export default function App() {
         setRecentBooking({
           title: b.slot?.floor?.parkingLocation?.name ?? "",
           subtitle: b.slot?.slotCode ?? "",
-          time: `${b.durationHours} hr`,
-          amount: `Rp ${formatRupiah(b.totalAmount)}`,
+          time:
+            parkingMode === "OPEN" && b.id === activeBookingId
+              ? "Open Parking"
+              : `${b.durationHours} hr`,
+          amount:
+            parkingMode === "OPEN" && b.id === activeBookingId
+              ? "Calculated when leaving"
+              : `Rp ${formatRupiah(b.totalAmount)}`,
           code: b.bookingCode,
+          bookingMode:
+            parkingMode === "OPEN" && b.id === activeBookingId
+              ? "OPEN"
+              : "FIXED",
         });
       }
     } catch (error) {
@@ -753,6 +886,24 @@ export default function App() {
     }
   }, [screen]);
 
+  const fetchVehicles = async () => {
+    try {
+      const res = await vehicleApi.getAll();
+      const mappedVehicles: Vehicle[] = res.data.map((v: any) => ({
+        id: v.id,
+        name: v.name,
+        plate: v.plateNumber,
+        plateNumber: v.plateNumber,
+      }));
+      setVehicles(mappedVehicles);
+      if (mappedVehicles.length > 0 && !selectedCar) {
+        setSelectedCar(mappedVehicles[0].name);
+      }
+    } catch (error) {
+      console.error("Failed to fetch vehicles:", error);
+    }
+  };
+
   const fetchActiveTicket = async () => {
     if (!activeBookingId) return;
     try {
@@ -763,9 +914,16 @@ export default function App() {
         title:
           b.slot?.floor?.parkingLocation?.name ?? recentBooking?.title ?? "",
         subtitle: b.slot?.slotCode ?? "",
-        time: `${b.durationHours} hr`,
-        amount: `Rp ${formatRupiah(b.totalAmount)}`,
+        time:
+          recentBooking?.bookingMode === "OPEN"
+            ? "Open Parking"
+            : `${b.durationHours} hr`,
+        amount:
+          recentBooking?.bookingMode === "OPEN"
+            ? "Calculated when leaving"
+            : `Rp ${formatRupiah(b.totalAmount)}`,
         code: b.bookingCode,
+        bookingMode: recentBooking?.bookingMode ?? "FIXED",
       });
     } catch (_) {
       // fallback ke data yang sudah ada
@@ -808,13 +966,6 @@ export default function App() {
       setUser(updatedUser);
       localStorage.setItem("smartparkUser", JSON.stringify(updatedUser));
 
-      if (!vehicles.some((v) => v.name === profileEdit.car)) {
-        setVehicles((prev) => [
-          ...prev,
-          { name: profileEdit.car, plate: profileEdit.carPlate || "N/A" },
-        ]);
-      }
-
       setSelectedCar(profileEdit.car);
       setScreen("profile");
     } catch (error) {
@@ -824,34 +975,62 @@ export default function App() {
     }
   };
 
-  const handleAddCar = () => {
+  const handleAddCar = async () => {
     const trimmed = newCarName.trim();
     const plate = newCarPlate.trim().toUpperCase();
     if (!trimmed || !plate) {
       showToast("Masukkan nama mobil dan plat nomor terlebih dahulu.", "error");
       return;
     }
-    if (vehicles.some((vehicle) => vehicle.name === trimmed)) {
-      showToast("Mobil sudah ada dalam daftar.", "error");
-      return;
+    try {
+      const res = await vehicleApi.create({
+        name: trimmed,
+        plateNumber: plate,
+      });
+      const newVehicle: Vehicle = {
+        id: res.data.id,
+        name: res.data.name,
+        plate: res.data.plateNumber,
+        plateNumber: res.data.plateNumber,
+      };
+      setVehicles((prev) => [...prev, newVehicle]);
+      setSelectedCar(newVehicle.name);
+      setProfileEdit((prev) => ({
+        ...prev,
+        car: newVehicle.name,
+        carPlate: newVehicle.plate,
+      }));
+      setNewCarName("");
+      setNewCarPlate("");
+      showToast("Mobil berhasil ditambahkan!", "success");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Gagal menambahkan mobil";
+      showToast(message, "error");
     }
-    setVehicles((prev) => [...prev, { name: trimmed, plate }]);
-    setSelectedCar(trimmed);
-    setProfileEdit((prev) => ({ ...prev, car: trimmed, carPlate: plate }));
-    setNewCarName("");
-    setNewCarPlate("");
   };
 
-  const handleRemoveCar = (name: string) => {
-    setVehicles((prev) => {
-      const nextVehicles = prev.filter((vehicle) => vehicle.name !== name);
-      if (selectedCar === name) {
-        const next = nextVehicles[0];
-        setSelectedCar(next?.name ?? "");
-        setProfileEdit((prev) => ({ ...prev, car: next?.name ?? "" }));
-      }
-      return nextVehicles;
-    });
+  const handleRemoveCar = async (name: string) => {
+    const vehicleToRemove = vehicles.find((v) => v.name === name);
+    if (!vehicleToRemove) return;
+
+    try {
+      await vehicleApi.delete(vehicleToRemove.id);
+      setVehicles((prev) => {
+        const nextVehicles = prev.filter((vehicle) => vehicle.name !== name);
+        if (selectedCar === name) {
+          const next = nextVehicles[0];
+          setSelectedCar(next?.name ?? "");
+          setProfileEdit((prev) => ({ ...prev, car: next?.name ?? "" }));
+        }
+        return nextVehicles;
+      });
+      showToast("Mobil berhasil dihapus!", "success");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Gagal menghapus mobil";
+      showToast(message, "error");
+    }
   };
 
   const handleGoogleLogin = () => {
@@ -1114,7 +1293,7 @@ export default function App() {
                 <h1>Bio-data</h1>
               </div>
               <div className="profile-header-card">
-                <div className="avatar-circle profile-avatar">B</div>
+                {/* <div className="avatar-circle profile-avatar">B</div> */}
                 <div>
                   <strong>{user?.name ?? signupData.name}</strong>
                   <span>{user?.email ?? signupData.email}</span>
@@ -1286,7 +1465,9 @@ export default function App() {
                   <div className="screen screen-home">
                     <div className="welcome-card">
                       <div className="welcome-content">
-                        <span className="welcome-label">Hello, Bagas</span>
+                        <span className="welcome-label">
+                          Hello, {user?.name?.split(" ")[1] ?? "User"}
+                        </span>
 
                         <div className="welcome-stats">
                           <strong>420</strong>
@@ -1424,6 +1605,7 @@ export default function App() {
                             onClick={() => {
                               setSelectedParking(parking);
                               setSelectedSlot(null);
+                              setParkingMode("FIXED");
                               setScreen("parkingDetails");
                             }}
                           >
@@ -1508,8 +1690,14 @@ export default function App() {
                         </div>
 
                         <div>
-                          <span>Duration</span>
-                          <strong>{bookingDuration}h</strong>
+                          <span>
+                            {recentBookingIsOpen ? "Booking Mode" : "Duration"}
+                          </span>
+                          <strong>
+                            {recentBookingIsOpen
+                              ? "Open Parking"
+                              : `${bookingDuration}h`}
+                          </strong>
                         </div>
                       </div>
                     </div>
@@ -1589,8 +1777,10 @@ export default function App() {
                           ? upcomingBookingsState
                           : completedBookingsState
                         ).map((item, index) => (
-                          <button
-                            key={`${item.title}-${index}`}
+                          <div
+                            key={item.id ?? `${item.title}-${index}`}
+                            role={bookingTab === "upcoming" ? "button" : undefined}
+                            tabIndex={bookingTab === "upcoming" ? 0 : undefined}
                             className={`booking-card booking-card--match ${bookingTab === "upcoming" ? "booking-card--clickable" : ""}`}
                             onClick={
                               bookingTab === "upcoming"
@@ -1612,8 +1802,21 @@ export default function App() {
                               >
                                 {item.time}
                               </span>
+                              {bookingTab === "upcoming" &&
+                                item.status === "RESERVED" && (
+                                  <button
+                                    type="button"
+                                    className="cancel-booking-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setCancelTarget(item);
+                                    }}
+                                  >
+                                    Cancel Booking
+                                  </button>
+                                )}
                             </div>
-                          </button>
+                          </div>
                         ))
                       )}
                     </div>
@@ -1699,29 +1902,70 @@ export default function App() {
                     </div>
 
                     <div className="parking-duration-section">
-                      <h2>Select Parking Duration</h2>
-                      <div className="duration-grid duration-grid--compact">
-                        {durationOptions.map((duration) => (
-                          <button
-                            key={duration}
-                            type="button"
-                            className={`duration-card ${bookingDuration === duration ? "active" : ""}`}
-                            onClick={() => setBookingDuration(duration)}
-                          >
-                            <span>{`Rp10k/h`}</span>
-                            <strong>
-                              {duration} {duration === 1 ? "Hour" : "Hours"}
-                            </strong>
-                          </button>
-                        ))}
+                      <h2>Booking Mode</h2>
+                      <div className="booking-mode-selector">
+                        <button
+                          type="button"
+                          className={`booking-mode-option ${parkingMode === "FIXED" ? "active" : ""}`}
+                          onClick={() => setParkingMode("FIXED")}
+                        >
+                          <span className="booking-mode-radio"></span>
+                          <span>Fixed Duration</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`booking-mode-option ${parkingMode === "OPEN" ? "active" : ""}`}
+                          onClick={() => setParkingMode("OPEN")}
+                        >
+                          <span className="booking-mode-radio"></span>
+                          <span>Open Parking</span>
+                        </button>
                       </div>
+                    </div>
+
+                    <div className="parking-duration-section">
+                      <h2>Select Parking Duration</h2>
+                      {isOpenParking ? (
+                        <div className="open-parking-info-card">
+                          <div className="open-parking-icon">
+                            <SquareParking size={22} />
+                          </div>
+                          <div>
+                            <strong>Unlimited Parking</strong>
+                            <p>
+                              Park as long as you need. Your parking fee will be
+                              calculated automatically when you leave.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="duration-grid duration-grid--compact">
+                          {durationOptions.map((duration) => (
+                            <button
+                              key={duration}
+                              type="button"
+                              className={`duration-card ${bookingDuration === duration ? "active" : ""}`}
+                              onClick={() => setBookingDuration(duration)}
+                            >
+                              <span>{`Rp10k/h`}</span>
+                              <strong>
+                                {duration} {duration === 1 ? "Hour" : "Hours"}
+                              </strong>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="parking-price-card">
                       <span className="price-label">Estimated Price</span>
 
-                      <strong className="price-value">
-                        Rp {formatRupiah(bookingDuration * 10000)}
+                      <strong
+                        className={`price-value ${isOpenParking ? "price-value--text" : ""}`}
+                      >
+                        {isOpenParking
+                          ? "Calculated when leaving"
+                          : `Rp ${formatRupiah(bookingDuration * 10000)}`}
                       </strong>
                     </div>
 
@@ -1943,7 +2187,7 @@ export default function App() {
                           <span className="booking-pill">{activeFloor}</span>
 
                           <span className="booking-pill">
-                            {bookingDuration} Hours
+                            {isOpenParking ? "Unlimited" : `${bookingDuration} Hours`}
                           </span>
                         </div>
                       </div>
@@ -2065,7 +2309,7 @@ export default function App() {
                         <span className="duration-label">Duration</span>
 
                         <div className="booking-duration-pill">
-                          {bookingDuration} Hours
+                          {isOpenParking ? "Unlimited" : `${bookingDuration} Hours`}
                         </div>
                       </div>
 
@@ -2122,12 +2366,18 @@ export default function App() {
                               Total Payment
                             </span>
 
-                            <strong className="payment-total-price">
-                              Rp {formatRupiah(bookingDuration * 10000)}
+                            <strong
+                              className={`payment-total-price ${isOpenParking ? "payment-total-price--text" : ""}`}
+                            >
+                              {isOpenParking
+                                ? "Calculated when leaving"
+                                : `Rp ${formatRupiah(bookingDuration * 10000)}`}
                             </strong>
 
                             <span className="payment-total-note">
-                              {bookingDuration} Hours Parking
+                              {isOpenParking
+                                ? "Open Parking"
+                                : `${bookingDuration} Hours Parking`}
                             </span>
                           </div>
 
@@ -2242,9 +2492,13 @@ export default function App() {
                           </div>
                           <div className="eticket-divider-v" />
                           <div className="eticket-info-block">
-                            <span className="eticket-label">Duration</span>
+                            <span className="eticket-label">
+                              {recentBookingIsOpen ? "Mode" : "Duration"}
+                            </span>
                             <strong className="eticket-value">
-                              {bookingDuration}h
+                              {recentBookingIsOpen
+                                ? "Open Parking"
+                                : `${bookingDuration}h`}
                             </strong>
                           </div>
                         </div>
@@ -2260,9 +2514,13 @@ export default function App() {
                             <MoveRight size={18} strokeWidth={1.5} />
                           </div>
                           <div className="eticket-info-block eticket-info-block--right">
-                            <span className="eticket-label">Departure</span>
+                            <span className="eticket-label">
+                              {recentBookingIsOpen ? "Leaving" : "Departure"}
+                            </span>
                             <strong className="eticket-time">
-                              {formatTime(departureHour, departureMinute)}
+                              {recentBookingIsOpen
+                                ? "Anytime"
+                                : formatTime(departureHour, departureMinute)}
                             </strong>
                           </div>
                         </div>
@@ -2384,16 +2642,25 @@ export default function App() {
                       </div>
 
                       <div className="ticket-info-row">
-                        <span>Departure</span>
+                        <span>{recentBookingIsOpen ? "Leaving" : "Departure"}</span>
                         <strong>
-                          {String(departureHour).padStart(2, "0")}:
-                          {String(departureMinute).padStart(2, "0")}
+                          {recentBookingIsOpen
+                            ? "Anytime"
+                            : `${String(departureHour).padStart(2, "0")}:${String(
+                                departureMinute,
+                              ).padStart(2, "0")}`}
                         </strong>
                       </div>
 
                       <div className="ticket-info-row">
-                        <span>Duration</span>
-                        <strong>{bookingDuration} Hours</strong>
+                        <span>
+                          {recentBookingIsOpen ? "Booking Mode" : "Duration"}
+                        </span>
+                        <strong>
+                          {recentBookingIsOpen
+                            ? "Open Parking"
+                            : `${bookingDuration} Hours`}
+                        </strong>
                       </div>
                     </div>
                   </div>
@@ -2411,9 +2678,13 @@ export default function App() {
                         className="profile-hero-svg"
                       />
 
-                      <strong>Bagas Aji Herlambang</strong>
+                      <strong>{user?.name ?? "SmartPark User"}</strong>
 
-                      <span>@ceosmartpark</span>
+                      <span>
+                        {user?.email
+                          ? `@${user.email.split("@")[0]}`
+                          : "@smartpark"}
+                      </span>
 
                       <div className="profile-member-badge">
                         SmartPark Member
@@ -2787,6 +3058,35 @@ export default function App() {
               </span>
               <span>Profile</span>
             </button>
+          </div>
+        )}
+        {cancelTarget && (
+          <div className="confirmation-overlay">
+            <div className="confirmation-dialog">
+              <h2>Cancel Booking?</h2>
+              <p>
+                Your reserved parking slot will be released and cannot be
+                recovered.
+              </p>
+              <div className="confirmation-actions">
+                <button
+                  type="button"
+                  className="confirmation-keep-button"
+                  onClick={() => setCancelTarget(null)}
+                  disabled={cancelLoading}
+                >
+                  Keep Booking
+                </button>
+                <button
+                  type="button"
+                  className="confirmation-cancel-button"
+                  onClick={handleCancelBooking}
+                  disabled={cancelLoading}
+                >
+                  {cancelLoading ? "Cancelling..." : "Cancel Booking"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {/* Toast Notification */}
