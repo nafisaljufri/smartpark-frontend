@@ -2,6 +2,8 @@ const BASE_URL =
   import.meta.env.VITE_API_URL ||
   "http://localhost:3000/api/v1";
 
+console.log("API URL =", BASE_URL);
+
 // ── Token Management ──────────────────────────────────────────
 export const getAccessToken = () => localStorage.getItem('accessToken');
 export const getRefreshToken = () => localStorage.getItem('refreshToken');

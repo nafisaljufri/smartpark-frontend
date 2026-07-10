@@ -494,6 +494,8 @@ export default function App() {
   };
 
   const handleSignup = async () => {
+    console.log("STEP 1");
+
     if (
       !signupData.name ||
       !signupData.email ||
@@ -509,12 +511,17 @@ export default function App() {
     setSignupError("");
 
     try {
+
+      console.log("STEP 2");
+
       const res = await authApi.register({
         name: signupData.name,
         email: signupData.email,
         password: signupData.password,
         phone: signupData.phone,
       });
+
+      console.log("STEP 3", res);
 
       const { tokens, user } = res.data;
       const { accessToken, refreshToken } = tokens;
@@ -627,7 +634,9 @@ export default function App() {
       subtitle: booking.subtitle,
       time: booking.time,
       amount:
-        booking.bookingMode === "OPEN" ? "Calculated when leaving" : "Rp 30.000",
+        booking.bookingMode === "OPEN"
+          ? "Calculated when leaving"
+          : "Rp 30.000",
       code,
       bookingMode: booking.bookingMode,
     };
@@ -823,9 +832,7 @@ export default function App() {
             ? "Open Parking"
             : `${b.durationHours} hr`,
         bookingMode:
-          parkingMode === "OPEN" && b.id === activeBookingId
-            ? "OPEN"
-            : "FIXED",
+          parkingMode === "OPEN" && b.id === activeBookingId ? "OPEN" : "FIXED",
         status: b.status,
       }));
 
@@ -838,9 +845,7 @@ export default function App() {
             ? "Open Parking"
             : `${b.durationHours} hr`,
         bookingMode:
-          parkingMode === "OPEN" && b.id === activeBookingId
-            ? "OPEN"
-            : "FIXED",
+          parkingMode === "OPEN" && b.id === activeBookingId ? "OPEN" : "FIXED",
         status: b.status,
       }));
 
@@ -1779,7 +1784,9 @@ export default function App() {
                         ).map((item, index) => (
                           <div
                             key={item.id ?? `${item.title}-${index}`}
-                            role={bookingTab === "upcoming" ? "button" : undefined}
+                            role={
+                              bookingTab === "upcoming" ? "button" : undefined
+                            }
                             tabIndex={bookingTab === "upcoming" ? 0 : undefined}
                             className={`booking-card booking-card--match ${bookingTab === "upcoming" ? "booking-card--clickable" : ""}`}
                             onClick={
@@ -2187,7 +2194,9 @@ export default function App() {
                           <span className="booking-pill">{activeFloor}</span>
 
                           <span className="booking-pill">
-                            {isOpenParking ? "Unlimited" : `${bookingDuration} Hours`}
+                            {isOpenParking
+                              ? "Unlimited"
+                              : `${bookingDuration} Hours`}
                           </span>
                         </div>
                       </div>
@@ -2309,7 +2318,9 @@ export default function App() {
                         <span className="duration-label">Duration</span>
 
                         <div className="booking-duration-pill">
-                          {isOpenParking ? "Unlimited" : `${bookingDuration} Hours`}
+                          {isOpenParking
+                            ? "Unlimited"
+                            : `${bookingDuration} Hours`}
                         </div>
                       </div>
 
@@ -2642,7 +2653,9 @@ export default function App() {
                       </div>
 
                       <div className="ticket-info-row">
-                        <span>{recentBookingIsOpen ? "Leaving" : "Departure"}</span>
+                        <span>
+                          {recentBookingIsOpen ? "Leaving" : "Departure"}
+                        </span>
                         <strong>
                           {recentBookingIsOpen
                             ? "Anytime"
