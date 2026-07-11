@@ -53,6 +53,8 @@ import {
   setTokens,
   clearTokens,
 } from "./services/api";
+import { FcGoogle } from "react-icons/fc";
+import { FaFacebook } from "react-icons/fa";
 
 const onboardingContent = [
   {
@@ -282,18 +284,18 @@ export default function App() {
   );
   const [search, setSearch] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("ceosmartpark@gmail.com");
+  const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [signupLoading, setSignupLoading] = useState(false);
   const [signupError, setSignupError] = useState("");
   const [signupData, setSignupData] = useState({
-    name: "Bagas Aji Herlambang",
-    email: "ceosmartpark@gmail.com",
-    birthdate: "18/03/2024",
-    phone: "+62 (454) 726-0592",
-    password: "123",
+    name: "",
+    email: "",
+    birthdate: "",
+    phone: "",
+    password: "",
   });
 
   const [user, setUser] = useState<User | null>(() => {
@@ -494,7 +496,6 @@ export default function App() {
   };
 
   const handleSignup = async () => {
-    console.log("STEP 1");
 
     if (
       !signupData.name ||
@@ -512,16 +513,12 @@ export default function App() {
 
     try {
 
-      console.log("STEP 2");
-
       const res = await authApi.register({
         name: signupData.name,
         email: signupData.email,
         password: signupData.password,
         phone: signupData.phone,
       });
-
-      console.log("STEP 3", res);
 
       const { tokens, user } = res.data;
       const { accessToken, refreshToken } = tokens;
@@ -555,16 +552,9 @@ export default function App() {
   const handleBookingConfirm = async () => {
     if (!selectedParking || !selectedSlot) return;
 
-    console.log("Debug - selectedParking:", selectedParking);
-    console.log("Debug - selectedSlot:", selectedSlot);
-    console.log("Debug - activeFloor:", activeFloor);
-    console.log("Debug - slotsData:", slotsData);
-
     // Cari slot id dari slotsData
     const floorSlotList = slotsData[activeFloor] ?? [];
-    console.log("Debug - floorSlotList:", floorSlotList);
     const slotObj = floorSlotList.find((s) => s.label === selectedSlot);
-    console.log("Debug - slotObj:", slotObj);
 
     if (!slotObj?.id) {
       setBookingError("Slot tidak valid, silakan pilih ulang.");
@@ -758,10 +748,9 @@ export default function App() {
     setFloorsLoading(true);
     setSelectedSlot(null); // Reset selected slot when changing parking location
     try {
-      console.log("Fetching floors for parkingId:", parkingId);
       const res = await parkingApi.getFloors(parkingId);
       const floors = res.data;
-      console.log("Fetched floors:", floors);
+
       setFloorsData(floors);
 
       if (floors.length > 0) {
@@ -775,9 +764,7 @@ export default function App() {
 
         await Promise.all(
           floors.map(async (floor: any) => {
-            console.log("Fetching slots for floor:", floor.id, floor.floorName);
             const slotRes = await parkingApi.getSlots(floor.id);
-            console.log("Slots for floor", floor.floorName, ":", slotRes.data);
             const slotsArray = slotRes.data.slots || [];
             slotMap[floor.floorName] = slotsArray.map((slot: any) => ({
               id: slot.id,
@@ -787,7 +774,6 @@ export default function App() {
           }),
         );
 
-        console.log("Final slotMap:", slotMap);
         setSlotsData(slotMap);
 
         // Auto-select first available slot on the first floor
@@ -795,15 +781,11 @@ export default function App() {
         const firstAvailableSlot = firstFloorSlots.find(
           (slot) => !slot.occupied,
         );
-        console.log("First available slot:", firstAvailableSlot);
         if (firstAvailableSlot) {
           setSelectedSlot(firstAvailableSlot.label);
-          console.log("Set selectedSlot to:", firstAvailableSlot.label);
         }
       }
     } catch (error) {
-      console.error("Error fetching floors/slots:", error);
-      // fallback ke dummy jika gagal
     } finally {
       setFloorsLoading(false);
     }
@@ -905,7 +887,6 @@ export default function App() {
         setSelectedCar(mappedVehicles[0].name);
       }
     } catch (error) {
-      console.error("Failed to fetch vehicles:", error);
     }
   };
 
@@ -1110,16 +1091,19 @@ export default function App() {
                 </p>
                 <div className="input-group">
                   <label>Email</label>
-                  <input
+                 <input
                     value={loginEmail}
+                    placeholder="Enter your email"
+                    autoComplete="email"
                     onChange={(e) => setLoginEmail(e.target.value)}
-                  />
+                />
                 </div>
                 <div className="input-group">
                   <label>Password</label>
                   <input
                     type="password"
                     value={loginPassword}
+                    placeholder="Enter your password"
                     onChange={(e) => setLoginPassword(e.target.value)}
                   />
                 </div>
@@ -1162,12 +1146,14 @@ export default function App() {
                   className="social-button google"
                   onClick={() => handleGoogleLogin()}
                 >
+                  <FcGoogle size={20} />
                   Continue with Google
                 </button>
                 <button
                   className="social-button facebook"
                   onClick={() => handleFacebookLogin()}
                 >
+                  <FaFacebook size={20} />
                   Continue with Facebook
                 </button>
               </div>

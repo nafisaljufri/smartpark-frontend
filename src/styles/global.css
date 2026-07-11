@@ -671,12 +671,19 @@ button {
   box-shadow: none;
 }
 
-.input-group input:focus {
-  outline: none;
+.input-group input::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
 
-  border-color: var(--primary-green);
+.input-group input:focus::placeholder {
+  color: #c5c5c5;
+}
 
-  box-shadow: 0 0 0 3px rgba(22, 61, 52, 0.08);
+.input-group input:focus{
+    outline:none;
+    border-color:#16a34a;
+    box-shadow:0 0 0 3px rgba(22,163,74,.15);
 }
 
 .input-group label {
@@ -4690,6 +4697,11 @@ svg {
 }
 
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
